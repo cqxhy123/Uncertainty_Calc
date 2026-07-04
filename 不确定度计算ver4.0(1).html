@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>合成不确定度计算 - 川崎小黄鸭</title>
+<style>
+  /* 页面基础样式 + 渐变背景（带缓动动画） */
+  body{
+    font-family: Arial,Segoe UI,Microsoft Yahei;
+    margin:20px;
+    background: linear-gradient(135deg, #f5f9ff 0%, #d8ecff 50%, #eaf9ff 100%);
+    background-size: 200% 200%;
+    background-attachment: fixed;
+    animation: gradientShift 12s ease infinite;
+    color: #0b2236;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  h1{margin:0 0 8px}
+  .panel { background: rgba(255,255,255,0.85); padding:12px; border-radius:6px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.04) }
+  table{border-collapse:collapse; width:100%; margin-top:8px}
+  th,td{border:1px solid rgba(10,20,30,0.12); padding:6px; text-align:center; background: rgba(255,255,255,0.65)}
+  input[type="text"], textarea{width:100%; box-sizing:border-box; background: rgba(255,255,255,0.95); border:1px solid #cfdce6; padding:6px; border-radius:4px}
+  .controls{margin:10px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .result{white-space:pre; background:rgba(255,255,255,0.95); padding:10px; border:1px solid #ddd; margin-top:10px; border-radius:6px}
+  button{padding:6px 10px; background:#1976d2; color:white; border:none; border-radius:3px; cursor:pointer}
+  button:hover{background:#155fa0}
+  .small{font-size:0.9em; color:#06314a}
+  thead th { background: rgba(255,255,255,0.85); font-weight:600 }
+  .two-col { display:flex; gap:12px; }
+  .two-col > div { flex:1; }
+  label.smallish { font-size:0.95em; color:#234; display:block; margin-bottom:6px; }
+  textarea { min-height:80px; resize:vertical; }
+</style>
+</head>
+<body>
+  <h1>合成不确定度计算器</h1>
+  <div class="small">作者：川崎小黄鸭  —— 说明：手动输入变量名称、测量值、A/B类不确定度和系数（例如 2）。支持科学计数法输入，如 1e-3。</div>
+
+  <!-- A 类不确定度计算面板 -->
+  <div class="panel" id="atypePanel">
+    <h3>单个物理量的 A 类不确定度计算</h3>
+    <div class="small">输入物理量名称、重复测量次数和各次测量值（用空格、逗号或换行分隔）。计算平均值与 A 类标准不确定度 (u_A = s/√n)，结果以科学计数法 (12 位有效数字) 显示。</div>
+    <div style="margin-top:8px" class="two-col">
+      <div>
+        <label class="smallish">物理量名称（必须）</label>
+        <input id="a_name" type="text" placeholder="例如 L"/>
+      </div>
+      <div>
+        <label class="smallish">测量次数 n（整数 &ge;2，可选）</label>
+        <input id="a_n" type="text" placeholder="例如 5"/>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      <label class="smallish">各次测量值（支持科学计数法，空格/逗号/换行分隔）</label>
+      <textarea id="a_values" placeholder="例如 1.234 1.236 1.233 1.235 1.234"></textarea>
+    </div>
+    <div style="margin-top:8px" class="controls">
+      <button id="computeA">计算 A 类不确定度</button>
+      <button id="clearA" style="background:#777">清空</button>
+      <div style="flex:1"></div>
+      <div id="aResult" class="small" style="min-width:320px;color:#05314a"></div>
+    </div>
+  </div>
+
+  <!-- B 类不确定度计算面板 -->
+  <div class="panel" id="btypePanel">
+    <h3>单个物理量的 B 类不确定度（由仪器 delta 计算）</h3>
+    <div class="small">输入物理量名称和仪器不确定度 delta，按矩形分布假定 u_B = delta / √3 计算并显示（科学计数法 12 位）。</div>
+    <div style="margin-top:8px" class="two-col">
+      <div>
+        <label class="smallish">物理量名称（必须）</label>
+        <input id="b_name" type="text" placeholder="例如 ΔT"/>
+      </div>
+      <div>
+        <label class="smallish">仪器不确定度 delta（支持科学计数法）</label>
+        <input id="b_delta" type="text" placeholder="例如 0.1 或 1e-3"/>
+      </div>
+    </div>
+    <div style="margin-top:8px" class="controls">
+      <button id="computeB">计算 B 类不确定度</button>
+      <button id="clearB" style="background:#777">清空</button>
+      <div style="flex:1"></div>
+      <div id="bResult" class="small" style="min-width:320px;color:#05314a"></div>
+    </div>
+  </div>
+
+  <!-- 手动合成某物理量不确定度面板 -->
+  <div class="panel" id="manualPanel">
+    <h3>手动合成单个物理量的不确定度（A + B 合成）</h3>
+    <div class="small">手动输入物理量名称、uA、uB（可选测量值 x 用于计算相对不确定度），程序计算 u = √(uA^2 + uB^2) 并显示相对不确定度（若提供 x）。</div>
+    <div style="margin-top:8px" class="two-col">
+      <div>
+        <label class="smallish">物理量名称（必须）</label>
+        <input id="m_name" type="text" placeholder="例如 L"/>
+      </div>
+      <div>
+        <label class="smallish">测量值 x（可选，用于计算相对不确定度）</label>
+        <input id="m_x" type="text" placeholder="例如 0.123 or 1.23e-1"/>
+      </div>
+    </div>
+    <div style="margin-top:8px" class="two-col">
+      <div>
+        <label class="smallish">类型A 不确定度 uA</label>
+        <input id="m_uA" type="text" placeholder="例如 0.002"/>
+      </div>
+      <div>
+        <label class="smallish">类型B 不确定度 uB</label>
+        <input id="m_uB" type="text" placeholder="例如 0.001"/>
+      </div>
+    </div>
+    <div style="margin-top:8px" class="controls">
+      <button id="computeM">合成并显示</button>
+      <button id="clearM" style="background:#777">清空</button>
+      <div style="flex:1"></div>
+      <div id="mResult" class="small" style="min-width:320px;color:#05314a"></div>
+    </div>
+  </div>
+
+  <!-- 原有合成不确定度面板 -->
+  <div class="panel">
+    <div class="controls">
+      <button id="addRow">增加行</button>
+      <button id="delRow">删除选中行</button>
+      <label style="margin-left:12px">主物理量 f：
+        <input id="fVal" type="text" placeholder="例如 1.23e2" style="width:160px; margin-left:6px"/>
+      </label>
+      <button id="compute" style="margin-left:8px">计算</button>
+    </div>
+
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>选择</th>
+          <th>名称（必须）</th>
+          <th>测量值 x</th>
+          <th>uA</th>
+          <th>uB</th>
+          <th>系数 coeff（默认1）</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div style="margin-top:8px">
+      <button id="fillSample">示例(3行)</button>
+      <button id="clear">清空表格</button>
+    </div>
+  </div>
+
+  <div class="result" id="resultArea">结果将在此显示。</div>
+
+<script>
+(function(){
+  // 页面加载时提醒统一单位
+  window.addEventListener('load', ()=> {
+    setTimeout(()=> {
+      alert('提示：请确认所有输入的物理量使用相同单位（例如长度均为 m，温差均为 K）再进行计算。如果要求输入物理量名称，随便输入一个即可');
+    }, 200);
+  });
+
+  // 表格与控件引用
+  const tbody = document.querySelector('#tbl tbody');
+  const addRowBtn = document.getElementById('addRow');
+  const delRowBtn = document.getElementById('delRow');
+  const computeBtn = document.getElementById('compute');
+  const fillBtn = document.getElementById('fillSample');
+  const clearBtn = document.getElementById('clear');
+  const resultArea = document.getElementById('resultArea');
+
+  // A类
+  const a_name = document.getElementById('a_name');
+  const a_n = document.getElementById('a_n');
+  const a_values = document.getElementById('a_values');
+  const computeA = document.getElementById('computeA');
+  const clearA = document.getElementById('clearA');
+  const aResult = document.getElementById('aResult');
+
+  // B类
+  const b_name = document.getElementById('b_name');
+  const b_delta = document.getElementById('b_delta');
+  const computeB = document.getElementById('computeB');
+  const clearB = document.getElementById('clearB');
+  const bResult = document.getElementById('bResult');
+
+  // 手动合成
+  const m_name = document.getElementById('m_name');
+  const m_x = document.getElementById('m_x');
+  const m_uA = document.getElementById('m_uA');
+  const m_uB = document.getElementById('m_uB');
+  const computeM = document.getElementById('computeM');
+  const clearM = document.getElementById('clearM');
+  const mResult = document.getElementById('mResult');
+
+  // 新增行
+  function newRow(name='', x='', a='', b='', coeff='1'){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="checkbox" class="sel"/></td>
+      <td><input type="text" class="name" value="${escapeHtml(name)}"/></td>
+      <td><input type="text" class="x" value="${escapeHtml(x)}"/></td>
+      <td><input type="text" class="a" value="${escapeHtml(a)}"/></td>
+      <td><input type="text" class="b" value="${escapeHtml(b)}"/></td>
+      <td><input type="text" class="coeff" value="${escapeHtml(coeff)}"/></td>
+    `;
+    tbody.appendChild(tr);
+    return tr;
+  }
+
+  function escapeHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+  addRowBtn.addEventListener('click', ()=> newRow());
+  delRowBtn.addEventListener('click', ()=>{
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    for(let i=rows.length-1;i>=0;i--){
+      const r = rows[i];
+      if(r.querySelector('.sel').checked) tbody.removeChild(r);
+    }
+  });
+
+  fillBtn.addEventListener('click', ()=>{
+    tbody.innerHTML='';
+    newRow('Q','1.23e1','0.05','0.02','1');
+    newRow('L','0.50','0.001','0.0005','1');
+    newRow('A','0.10','0.0002','0.0001','1');
+  });
+  clearBtn.addEventListener('click', ()=> tbody.innerHTML='');
+
+  // 工具：解析数值（支持科学计数法）
+  function parseNum(s){
+    if(typeof s !== 'string') s = ''+s;
+    s = s.trim();
+    if(s === '') return NaN;
+    const v = Number(s);
+    return Number.isFinite(v) ? v : NaN;
+  }
+  function fmtSci12(v){
+    if(!isFinite(v)) return String(v);
+    return Number(v).toExponential(12);
+  }
+
+  // 主合成计算
+  computeBtn.addEventListener('click', ()=>{
+    resultArea.textContent = '';
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if(rows.length === 0){
+      alert('请先添加至少一行分物理量。');
+      return;
+    }
+    const names=[], xi=[], uA=[], uB=[], coeff=[];
+    for(let i=0;i<rows.length;i++){
+      const r = rows[i];
+      const name = r.querySelector('.name').value.trim();
+      if(!name){
+        alert('第'+(i+1)+'行 名称不能为空。');
+        return;
+      }
+      names.push(name);
+      const xs = r.querySelector('.x').value;
+      const as = r.querySelector('.a').value;
+      const bs = r.querySelector('.b').value;
+      const cs = r.querySelector('.coeff').value;
+      const xv = parseNum(xs);
+      const av = parseNum(as);
+      const bv = parseNum(bs);
+      let cv = parseNum(cs);
+      if(Number.isNaN(xv) || Number.isNaN(av) || Number.isNaN(bv) || Number.isNaN(cv)){
+        alert('第'+(i+1)+'行 有数值输入无效，请检查 x/uA/uB/coeff，支持科学计数法。');
+        return;
+      }
+      xi.push(xv); uA.push(av); uB.push(bv); coeff.push(cv);
+    }
+
+    const fStr = document.getElementById('fVal').value.trim();
+    const fVal = parseNum(fStr);
+    if(Number.isNaN(fVal)){
+      alert('主物理量 f 输入无效，请填写数值（支持科学计数法）。');
+      return;
+    }
+
+    const ux = [], urel = [];
+    for(let i=0;i<xi.length;i++){
+      const uxi = Math.sqrt(uA[i]*uA[i] + uB[i]*uB[i]) * coeff[i];
+      ux.push(uxi);
+      if(Math.abs(xi[i]) > 0){
+        urel.push( uxi / Math.abs(xi[i]) );
+      } else {
+        const manual = prompt('第'+(i+1)+'行 x=0，无法自动计算相对不确定度，请输入该分量的相对不确定度 u_i/x_i（支持科学计数法）：','0');
+        const mv = parseNum(manual||'');
+        if(Number.isNaN(mv)){ alert('输入无效，计算取消。'); return; }
+        urel.push(mv);
+      }
+    }
+
+    let rel2 = 0;
+    for(const r of urel) rel2 += r*r;
+    const rel_total = Math.sqrt(rel2);
+    const uc = Math.abs(fVal) * rel_total;
+
+    // 输出
+    let out = '';
+    out += '名称\t x(sci12)\t uA(sci12)\t uB(sci12)\t coeff\t u_x(sci12)\t u_i/x_i(sci12)\n';
+    for(let i=0;i<xi.length;i++){
+      out += names[i] + '\t' + fmtSci12(xi[i]) + '\t' + fmtSci12(uA[i]) + '\t' + fmtSci12(uB[i]) + '\t' + coeff[i] + '\t' + fmtSci12(ux[i]) + '\t' + fmtSci12(urel[i]) + '\n';
+    }
+    out += '\n主物理量 f = ' + fmtSci12(fVal) + '\n';
+    out += '合成标准不确定度 uc = ' + fmtSci12(uc) + '\n';
+    out += '相对不确定度 uc/f = ' + (Math.abs(fVal)>0 ? fmtSci12(uc/Math.abs(fVal)) : 'N/A (f=0)') + '\n';
+
+    resultArea.textContent = out;
+  });
+
+  // A类计算逻辑
+  computeA.addEventListener('click', ()=>{
+    aResult.textContent = '';
+    const name = (a_name.value || '').trim();
+    if(!name){ alert('请填写物理量名称'); return; }
+    const nStr = (a_n.value || '').trim();
+    const nVal = parseInt(nStr, 10);
+    if(nStr !== '' && (Number.isNaN(nVal) || nVal < 2)){ alert('测量次数 n 必须是整数且 >= 2'); return; }
+    const valsText = (a_values.value || '').trim();
+    if(!valsText){ alert('请填写测量值'); return; }
+    const parts = valsText.split(/[\s,;]+/).filter(s=>s.length>0);
+    if(parts.length !== nVal && nStr !== ''){
+      if(!confirm(`检测到 ${parts.length} 个数值，但 n = ${nVal}。是否继续使用 ${parts.length} 个值进行计算？`)) return;
+    }
+    const nums = [];
+    for(let i=0;i<parts.length;i++){
+      const v = parseNum(parts[i]);
+      if(Number.isNaN(v)){ alert('第'+(i+1)+' 个测量值无效：' + parts[i]); return; }
+      nums.push(v);
+    }
+    const m = nums.length;
+    let sum = 0;
+    for(const v of nums) sum += v;
+    const mean = sum / m;
+    let s2 = 0;
+    for(const v of nums) s2 += (v - mean) * (v - mean);
+    const s = Math.sqrt(s2 / (m - 1));
+    const uA_val = s / Math.sqrt(m);
+    aResult.innerHTML = `<b>${escapeHtml(name)}</b> 均值 = ${fmtSci12(mean)} ，A类不确定度 u_A = ${fmtSci12(uA_val)} （n=${m}）`;
+  });
+
+  clearA.addEventListener('click', ()=>{
+    a_name.value = '';
+    a_n.value = '';
+    a_values.value = '';
+    aResult.textContent = '';
+  });
+
+  // B类计算逻辑 (delta / √3)
+  computeB.addEventListener('click', ()=>{
+    bResult.textContent = '';
+    const name = (b_name.value || '').trim();
+    if(!name){ alert('请填写物理量名称'); return; }
+    const deltaStr = (b_delta.value || '').trim();
+    const delta = parseNum(deltaStr);
+    if(Number.isNaN(delta)){ alert('delta 输入无效，请使用数字或科学计数法'); return; }
+    const uB_val = delta / Math.sqrt(3);
+    bResult.innerHTML = `<b>${escapeHtml(name)}</b> 仪器 delta = ${fmtSci12(delta)} ，B类不确定度 u_B = ${fmtSci12(uB_val)}`;
+  });
+
+  clearB.addEventListener('click', ()=>{
+    b_name.value = '';
+    b_delta.value = '';
+    bResult.textContent = '';
+  });
+
+  // 手动合成逻辑
+  computeM.addEventListener('click', ()=>{
+    mResult.textContent = '';
+    const name = (m_name.value || '').trim();
+    if(!name){ alert('请填写物理量名称'); return; }
+    const xStr = (m_x.value || '').trim();
+    const xVal = parseNum(xStr);
+    const uAstr = (m_uA.value || '').trim();
+    const uBstr = (m_uB.value || '').trim();
+    const uA_val = parseNum(uAstr);
+    const uB_val = parseNum(uBstr);
+    if(Number.isNaN(uA_val) || Number.isNaN(uB_val)){ alert('uA 或 uB 输入无效'); return; }
+
+    // 计算 uA^2 + uB^2 与合成不确定度
+    const sumsq = uA_val*uA_val + uB_val*uB_val;
+    const u_comb = Math.sqrt(sumsq);
+
+    // 相对不确定度（若提供 x）
+    let relStr = 'N/A（未提供 x 或 x=0）';
+    if(!Number.isNaN(xVal) && Math.abs(xVal) > 0){
+      relStr = fmtSci12(u_comb / Math.abs(xVal));
+    }
+
+    // 显示合成结果，增加 uA^2 + uB^2 的显示（科学计数法）
+    mResult.innerHTML = `<b>${escapeHtml(name)}</b> 合成不确定度 u = ${fmtSci12(u_comb)} ，相对不确定度 u/x = ${relStr}
+<br>显示项：uA^2 + uB^2 = ${fmtSci12(sumsq)} （用于合成不确定度计算）`;
+  });
+
+  clearM.addEventListener('click', ()=>{
+    m_name.value = '';
+    m_x.value = '';
+    m_uA.value = '';
+    m_uB.value = '';
+    mResult.textContent = '';
+  });
+
+  // init
+  newRow();
+})();
+</script>
+</body>
+</html>
