@@ -8,15 +8,15 @@
 
 | 文件 | 说明 |
 |------|------|
-| `main.cpp` | 命令行版不确定度计算程序（C++） |
-| `index.html` | 网页版计算器，纯前端实现，双击即用 |
+| `degree of uncertainty.cpp` | 命令行版不确定度计算程序（C++） |
+| `Uncertainty_Calc.html` | 网页版计算器，纯前端实现，双击即用 |
 
 ## 🚀 快速开始
 
 ### 方式一：使用网页版（推荐，零门槛）
 
-1. 下载 `index.html` 文件（或克隆整个仓库）。
-2. 直接**双击** `index.html`，用默认浏览器打开。
+1. 下载 `Uncertainty_Calc.html` 文件（或克隆整个仓库）。
+2. 直接**双击** `Uncertainty_Calc.html`，用默认浏览器打开。
 3. 按照界面提示输入数据，点击相应按钮即可计算结果。
    - A 类不确定度：输入多次测量值，自动计算平均值和 A 类不确定度。
    - B 类不确定度：输入仪器误差 delta，按矩形分布计算 uB = delta/√3。
@@ -32,4 +32,11 @@
 #### 编译
 确保已安装 g++ 编译器（MinGW/Linux/macOS 均可）。
 ```bash
-g++ -o uncertainty_calc main.cpp# 合成不确定度计算器
+g++ -o uncertainty_calc "degree of uncertainty.cpp"
+```
+（需要支持 C++11 或以上）
+
+#### 运行
+```bash
+./uncertainty_calc
+```

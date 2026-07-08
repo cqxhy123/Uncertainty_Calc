@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>合成不确定度计算 - 川崎小黄鸭</title>
 <style>
-  /* 页面基础样式 + 渐变背景（带缓动动画） */
+  /* ===== 原有基础样式 ===== */
   body{
     font-family: Arial,Segoe UI,Microsoft Yahei;
     margin:20px;
@@ -24,10 +24,10 @@
   .panel { background: rgba(255,255,255,0.85); padding:12px; border-radius:6px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,0.04) }
   table{border-collapse:collapse; width:100%; margin-top:8px}
   th,td{border:1px solid rgba(10,20,30,0.12); padding:6px; text-align:center; background: rgba(255,255,255,0.65)}
-  input[type="text"], textarea{width:100%; box-sizing:border-box; background: rgba(255,255,255,0.95); border:1px solid #cfdce6; padding:6px; border-radius:4px}
+  input[type="text"], textarea{width:100%; box-sizing:border-box; background: rgba(255,255,255,0.95); border:1px solid #cfdce6; padding:6px; border-radius:4px; transition: border-color 0.2s, box-shadow 0.2s}
   .controls{margin:10px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
-  .result{white-space:pre; background:rgba(255,255,255,0.95); padding:10px; border:1px solid #ddd; margin-top:10px; border-radius:6px}
-  button{padding:6px 10px; background:#1976d2; color:white; border:none; border-radius:3px; cursor:pointer}
+  .result{white-space:pre-wrap; background:rgba(255,255,255,0.95); padding:10px; border:1px solid #ddd; margin-top:10px; border-radius:6px; font-family: Consolas, 'Courier New', monospace; font-size:0.9em}
+  button{padding:6px 10px; background:#1976d2; color:white; border:none; border-radius:3px; cursor:pointer; transition: background 0.2s}
   button:hover{background:#155fa0}
   .small{font-size:0.9em; color:#06314a}
   thead th { background: rgba(255,255,255,0.85); font-weight:600 }
@@ -35,9 +35,162 @@
   .two-col > div { flex:1; }
   label.smallish { font-size:0.95em; color:#234; display:block; margin-bottom:6px; }
   textarea { min-height:80px; resize:vertical; }
+
+  /* ===== Toast 通知 ===== */
+  .toast-container {
+    position: fixed; top: 16px; right: 16px; z-index: 10000;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    max-width: 420px; padding: 12px 36px 12px 16px;
+    border-radius: 6px; font-size: 0.92em; line-height: 1.5;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    pointer-events: auto;
+    position: relative;
+    animation: toastIn 0.35s ease;
+    background: #fff; color: #0b2236; border-left: 4px solid #1976d2;
+  }
+  .toast .toast-close {
+    position: absolute; top: 8px; right: 10px;
+    background: none; border: none; font-size: 16px; cursor: pointer;
+    color: #888; padding: 0; line-height: 1;
+  }
+  .toast .toast-close:hover { color: #333; }
+  .toast.removing { animation: toastOut 0.3s ease forwards; }
+  @keyframes toastIn  { from { opacity:0; transform: translateX(40px); } to { opacity:1; transform: translateX(0); } }
+  @keyframes toastOut { from { opacity:1; transform: translateX(0); }    to { opacity:0; transform: translateX(40px); } }
+
+  /* ===== x=0 遮罩层 ===== */
+  .overlay {
+    position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center;
+    animation: fadeIn 0.2s ease;
+  }
+  .overlay.hidden { display: none; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay-content {
+    background: #fff; border-radius: 8px; padding: 20px 24px;
+    min-width: 400px; max-width: 520px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  }
+  .overlay-content h3 { margin: 0 0 6px; }
+  .overlay-content .overlay-hint { font-size: 0.85em; color: #666; margin-bottom: 14px; }
+  .overlay-content .zero-x-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .overlay-content .zero-x-row label { min-width: 80px; font-weight: 600; white-space: nowrap; }
+  .overlay-content .zero-x-row input { flex: 1; }
+  .overlay-content .overlay-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+  .overlay-content .overlay-actions button.cancel { background: #777; }
+  .overlay-content .overlay-actions button.cancel:hover { background: #555; }
+
+  /* ===== 结果区操作按钮 ===== */
+  .result-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .result-actions button.copy-btn { background: #388e3c; }
+  .result-actions button.copy-btn:hover { background: #2e7d32; }
+  .result-actions button.copy-btn.copied { background: #66bb6a; }
+
+  /* ===== 计算历史 ===== */
+  .history-entry { border: 1px solid #ddd; border-radius: 4px; margin-bottom: 6px; background: rgba(255,255,255,0.8); }
+  .history-summary {
+    padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+    user-select: none;
+  }
+  .history-summary:hover { background: rgba(25,118,210,0.06); }
+  .history-summary .history-time { font-size: 0.8em; color: #888; }
+  .history-summary .history-title { font-weight: 600; color: #0b2236; }
+  .history-detail {
+    display: none; padding: 8px 12px 12px; border-top: 1px solid #eee;
+    background: rgba(245,248,252,0.8); max-height: 420px; overflow-y: auto;
+  }
+  .history-entry.open .history-detail { display: block; }
+  .history-actions { margin-top: 8px; display: flex; gap: 8px; }
+
+  /* ===== 填入表格按钮 ===== */
+  button.fill-btn { background: #f57c00; }
+  button.fill-btn:hover { background: #e65100; }
+
+  /* ===== 输入数值预览 ===== */
+  input.num-input.input-valid   { border-color: #4caf50; box-shadow: 0 0 0 1px rgba(76,175,80,0.2); }
+  input.num-input.input-invalid { border-color: #f44336; box-shadow: 0 0 0 1px rgba(244,67,54,0.2); }
+  .preview-hint {
+    font-size: 0.75em; color: #888; margin-top: 2px; min-height: 1em;
+    transition: color 0.2s;
+  }
+  .preview-hint.valid { color: #2e7d32; }
+  .preview-hint.invalid { color: #c62828; }
+
+  /* ===== 拖拽排序 ===== */
+  .drag-handle {
+    cursor: grab; width: 28px; text-align: center; color: #aaa;
+    font-size: 1.1em; letter-spacing: -2px; user-select: none;
+    padding: 6px 2px !important; vertical-align: middle;
+  }
+  .drag-handle:active { cursor: grabbing; }
+  .drag-handle:hover { color: #555; background: rgba(0,0,0,0.04); }
+  tr.dragging { opacity: 0.35; }
+  tr.drag-over > td { border-top: 2px solid #1976d2 !important; }
+  thead th.drag-th { width: 28px; min-width: 28px; padding: 6px 2px; }
+
+  /* ===== 根号样式（带横线连接 √） ===== */
+  .sqrt {
+    display: inline-block;
+    border-top: 1.5px solid currentColor;
+    padding-top: 1px;
+    margin-top: 1px;
+    position: relative;
+  }
+  .sqrt::before {
+    content: "\221A";
+    position: absolute;
+    left: -0.6em;
+    top: -0.12em;
+    font-size: 1.15em;
+    line-height: 1;
+  }
+
+  /* ===== 结果表格 ===== */
+  .result-table {
+    width: 100%; border-collapse: collapse; margin: 0;
+    font-size: 0.9em;
+  }
+  .result-table th, .result-table td {
+    border: 1px solid rgba(10,20,30,0.15); padding: 8px 10px;
+    text-align: center; background: rgba(255,255,255,0.7);
+    white-space: nowrap;
+  }
+  .result-table thead th {
+    background: rgba(25,118,210,0.08); font-weight: 600;
+    color: #0b3d5e; font-size: 0.95em;
+  }
+  .result-table tbody tr:hover td { background: rgba(25,118,210,0.04); }
+  .result-table .col-name { text-align: left; font-weight: 600; }
+  .result-table .col-val { font-family: Consolas, 'Courier New', monospace; font-size: 0.92em; }
+  .result-summary { margin-top: 14px; line-height: 1.9; }
+  .result-summary .formula { color: #0b3d5e; }
+  .result-summary .eq-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
+  .result-summary .eq-label { font-weight: 600; min-width: 180px; }
+  .result-summary .eq-value { font-family: Consolas, 'Courier New', monospace; font-weight: 600; color: #1565c0; }
+  .result-summary .eq-final { font-size: 1.05em; padding: 6px 0; border-top: 1px dashed rgba(0,0,0,0.1); margin-top: 4px; }
 </style>
 </head>
 <body>
+  <!-- Toast 容器 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- x=0 遮罩层 -->
+  <div class="overlay hidden" id="zeroXOverlay">
+    <div class="overlay-content">
+      <h3>⚠️ 部分分量 x = 0</h3>
+      <div class="overlay-hint">x=0 时无法自动计算相对不确定度，请手动输入各分量的 u_i/x_i（支持科学计数法）：</div>
+      <div id="zeroXInputs"></div>
+      <div class="overlay-actions">
+        <button class="cancel" id="zeroXCancel">取消</button>
+        <button id="zeroXConfirm">确认并继续计算</button>
+      </div>
+    </div>
+  </div>
+
   <h1>合成不确定度计算器</h1>
   <div class="small">作者：川崎小黄鸭  —— 说明：手动输入变量名称、测量值、A/B类不确定度和系数（例如 2）。支持科学计数法输入，如 1e-3。</div>
 
@@ -52,7 +205,8 @@
       </div>
       <div>
         <label class="smallish">测量次数 n（整数 &ge;2，可选）</label>
-        <input id="a_n" type="text" placeholder="例如 5"/>
+        <input id="a_n" type="text" class="num-input" placeholder="例如 5"/>
+        <div class="preview-hint" id="a_n_hint"></div>
       </div>
     </div>
     <div style="margin-top:8px">
@@ -78,7 +232,8 @@
       </div>
       <div>
         <label class="smallish">仪器不确定度 delta（支持科学计数法）</label>
-        <input id="b_delta" type="text" placeholder="例如 0.1 或 1e-3"/>
+        <input id="b_delta" type="text" class="num-input" placeholder="例如 0.1 或 1e-3"/>
+        <div class="preview-hint" id="b_delta_hint"></div>
       </div>
     </div>
     <div style="margin-top:8px" class="controls">
@@ -100,17 +255,20 @@
       </div>
       <div>
         <label class="smallish">测量值 x（可选，用于计算相对不确定度）</label>
-        <input id="m_x" type="text" placeholder="例如 0.123 or 1.23e-1"/>
+        <input id="m_x" type="text" class="num-input" placeholder="例如 0.123 or 1.23e-1"/>
+        <div class="preview-hint" id="m_x_hint"></div>
       </div>
     </div>
     <div style="margin-top:8px" class="two-col">
       <div>
         <label class="smallish">类型A 不确定度 uA</label>
-        <input id="m_uA" type="text" placeholder="例如 0.002"/>
+        <input id="m_uA" type="text" class="num-input" placeholder="例如 0.002"/>
+        <div class="preview-hint" id="m_uA_hint"></div>
       </div>
       <div>
         <label class="smallish">类型B 不确定度 uB</label>
-        <input id="m_uB" type="text" placeholder="例如 0.001"/>
+        <input id="m_uB" type="text" class="num-input" placeholder="例如 0.001"/>
+        <div class="preview-hint" id="m_uB_hint"></div>
       </div>
     </div>
     <div style="margin-top:8px" class="controls">
@@ -121,20 +279,22 @@
     </div>
   </div>
 
-  <!-- 原有合成不确定度面板 -->
+  <!-- 合成不确定度表格面板 -->
   <div class="panel">
     <div class="controls">
       <button id="addRow">增加行</button>
       <button id="delRow">删除选中行</button>
       <label style="margin-left:12px">主物理量 f：
-        <input id="fVal" type="text" placeholder="例如 1.23e2" style="width:160px; margin-left:6px"/>
+        <input id="fVal" type="text" class="num-input" placeholder="例如 1.23e2" style="width:160px; margin-left:6px"/>
       </label>
+      <div class="preview-hint" id="fVal_hint" style="display:inline; margin-left:6px"></div>
       <button id="compute" style="margin-left:8px">计算</button>
     </div>
 
     <table id="tbl">
       <thead>
         <tr>
+          <th class="drag-th"></th>
           <th>选择</th>
           <th>名称（必须）</th>
           <th>测量值 x</th>
@@ -152,18 +312,63 @@
     </div>
   </div>
 
+  <!-- 计算结果区 -->
   <div class="result" id="resultArea">结果将在此显示。</div>
+  <div class="result-actions" id="resultActions" style="display:none">
+    <button class="copy-btn" id="copyResult">📋 复制结果</button>
+    <button class="fill-btn" id="clearResult">✕ 清除结果</button>
+  </div>
+
+  <!-- 计算历史面板 -->
+  <div class="panel" id="historyPanel" style="display:none">
+    <h3>📜 计算历史</h3>
+    <div id="historyList"></div>
+    <div class="history-actions">
+      <button id="clearHistory" style="background:#777">清空历史</button>
+    </div>
+  </div>
 
 <script>
 (function(){
-  // 页面加载时提醒统一单位
-  window.addEventListener('load', ()=> {
-    setTimeout(()=> {
-      alert('提示：请确认所有输入的物理量使用相同单位（例如长度均为 m，温差均为 K）再进行计算。如果要求输入物理量名称，随便输入一个即可');
-    }, 200);
+  "use strict";
+
+  // ==================== Toast 通知系统 ====================
+  const toastContainer = document.getElementById('toastContainer');
+  let toastIdCounter = 0;
+
+  function showToast(msg, durationMs) {
+    if (durationMs === undefined) durationMs = 5000;
+    const id = 'toast_' + (++toastIdCounter);
+    const div = document.createElement('div');
+    div.className = 'toast';
+    div.id = id;
+    div.innerHTML = '<span class="toast-close" data-toast="' + id + '">&times;</span>' + msg;
+    toastContainer.appendChild(div);
+
+    function remove() {
+      if (!document.getElementById(id)) return;
+      div.classList.add('removing');
+      setTimeout(function() {
+        var el = document.getElementById(id);
+        if (el) el.remove();
+      }, 300);
+    }
+
+    div.querySelector('.toast-close').addEventListener('click', remove);
+
+    if (durationMs > 0) {
+      setTimeout(remove, durationMs);
+    }
+  }
+
+  // 页面加载时显示 toast 替代 alert
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      showToast('💡 提示：请确认所有输入的物理量使用相同单位（例如长度均为 m，温差均为 K）再进行计算。如果要求输入物理量名称，随便输入一个即可。', 8000);
+    }, 300);
   });
 
-  // 表格与控件引用
+  // ==================== 原有 DOM 引用 ====================
   const tbody = document.querySelector('#tbl tbody');
   const addRowBtn = document.getElementById('addRow');
   const delRowBtn = document.getElementById('delRow');
@@ -171,6 +376,9 @@
   const fillBtn = document.getElementById('fillSample');
   const clearBtn = document.getElementById('clear');
   const resultArea = document.getElementById('resultArea');
+  const resultActions = document.getElementById('resultActions');
+  const copyResultBtn = document.getElementById('copyResult');
+  const clearResultBtn = document.getElementById('clearResult');
 
   // A类
   const a_name = document.getElementById('a_name');
@@ -196,41 +404,7 @@
   const clearM = document.getElementById('clearM');
   const mResult = document.getElementById('mResult');
 
-  // 新增行
-  function newRow(name='', x='', a='', b='', coeff='1'){
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><input type="checkbox" class="sel"/></td>
-      <td><input type="text" class="name" value="${escapeHtml(name)}"/></td>
-      <td><input type="text" class="x" value="${escapeHtml(x)}"/></td>
-      <td><input type="text" class="a" value="${escapeHtml(a)}"/></td>
-      <td><input type="text" class="b" value="${escapeHtml(b)}"/></td>
-      <td><input type="text" class="coeff" value="${escapeHtml(coeff)}"/></td>
-    `;
-    tbody.appendChild(tr);
-    return tr;
-  }
-
-  function escapeHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-
-  addRowBtn.addEventListener('click', ()=> newRow());
-  delRowBtn.addEventListener('click', ()=>{
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    for(let i=rows.length-1;i>=0;i--){
-      const r = rows[i];
-      if(r.querySelector('.sel').checked) tbody.removeChild(r);
-    }
-  });
-
-  fillBtn.addEventListener('click', ()=>{
-    tbody.innerHTML='';
-    newRow('Q','1.23e1','0.05','0.02','1');
-    newRow('L','0.50','0.001','0.0005','1');
-    newRow('A','0.10','0.0002','0.0001','1');
-  });
-  clearBtn.addEventListener('click', ()=> tbody.innerHTML='');
-
-  // 工具：解析数值（支持科学计数法）
+  // ==================== 工具函数 ====================
   function parseNum(s){
     if(typeof s !== 'string') s = ''+s;
     s = s.trim();
@@ -242,13 +416,423 @@
     if(!isFinite(v)) return String(v);
     return Number(v).toExponential(12);
   }
+  function escapeHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
-  // 主合成计算
-  computeBtn.addEventListener('click', ()=>{
-    resultArea.textContent = '';
+  // ==================== 输入数值实时预览 ====================
+  function updateInputPreview(inputEl, hintEl) {
+    var val = (inputEl.value || '').trim();
+    if (val === '') {
+      inputEl.classList.remove('input-valid', 'input-invalid');
+      if (hintEl) { hintEl.textContent = ''; hintEl.className = 'preview-hint'; }
+      return NaN;
+    }
+    var num = parseNum(val);
+    if (Number.isNaN(num)) {
+      inputEl.classList.add('input-invalid');
+      inputEl.classList.remove('input-valid');
+      if (hintEl) { hintEl.textContent = '⚠ 无效数值'; hintEl.className = 'preview-hint invalid'; }
+      return NaN;
+    } else {
+      inputEl.classList.add('input-valid');
+      inputEl.classList.remove('input-invalid');
+      if (hintEl) { hintEl.textContent = '= ' + fmtSci12(num); hintEl.className = 'preview-hint valid'; }
+      return num;
+    }
+  }
+
+  // 绑定预览：所有带 class="num-input" 的输入框
+  function bindPreview(inputEl, hintEl) {
+    if (!inputEl) return;
+    inputEl.addEventListener('blur', function() { updateInputPreview(inputEl, hintEl); });
+    inputEl.addEventListener('input', function() {
+      if (inputEl.classList.contains('input-invalid')) {
+        inputEl.classList.remove('input-invalid');
+        if (hintEl) { hintEl.textContent = ''; hintEl.className = 'preview-hint'; }
+      }
+    });
+  }
+
+  bindPreview(a_n, document.getElementById('a_n_hint'));
+  bindPreview(b_delta, document.getElementById('b_delta_hint'));
+  bindPreview(m_x, document.getElementById('m_x_hint'));
+  bindPreview(m_uA, document.getElementById('m_uA_hint'));
+  bindPreview(m_uB, document.getElementById('m_uB_hint'));
+  bindPreview(document.getElementById('fVal'), document.getElementById('fVal_hint'));
+
+  // ==================== 拖拽排序 ====================
+  let dragSrcIdx = -1;
+
+  tbody.addEventListener('dragstart', function(e) {
+    var handle = e.target.closest('.drag-handle');
+    if (!handle) { e.preventDefault(); return; }
+    var row = handle.closest('tr');
+    dragSrcIdx = Array.from(tbody.children).indexOf(row);
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragSrcIdx));
+  });
+
+  tbody.addEventListener('dragend', function(e) {
+    var row = e.target.closest('tr');
+    if (row) row.classList.remove('dragging');
+    tbody.querySelectorAll('.drag-over').forEach(function(r) { r.classList.remove('drag-over'); });
+    dragSrcIdx = -1;
+  });
+
+  tbody.addEventListener('dragover', function(e) {
+    var handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var row = handle.closest('tr');
+    tbody.querySelectorAll('.drag-over').forEach(function(r) { r.classList.remove('drag-over'); });
+    row.classList.add('drag-over');
+  });
+
+  tbody.addEventListener('dragleave', function(e) {
+    var handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    var row = handle.closest('tr');
+    if (!row.contains(e.relatedTarget)) {
+      row.classList.remove('drag-over');
+    }
+  });
+
+  tbody.addEventListener('drop', function(e) {
+    e.preventDefault();
+    var handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    var toRow = handle.closest('tr');
+    toRow.classList.remove('drag-over');
+
+    var fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (Number.isNaN(fromIdx) || fromIdx < 0) return;
+    var rows = Array.from(tbody.children);
+    if (fromIdx >= rows.length) return;
+    var fromRow = rows[fromIdx];
+    var toIdx = rows.indexOf(toRow);
+
+    if (fromIdx === toIdx) return;
+
+    if (fromIdx < toIdx) {
+      tbody.insertBefore(fromRow, rows[toIdx + 1] || null);
+    } else {
+      tbody.insertBefore(fromRow, rows[toIdx]);
+    }
+    fromRow.classList.remove('dragging');
+  });
+
+  // ==================== 表格行构建 ====================
+  function newRow(name, x, a, b, coeff){
+    if (name === undefined) name = '';
+    if (x === undefined) x = '';
+    if (a === undefined) a = '';
+    if (b === undefined) b = '';
+    if (coeff === undefined) coeff = '1';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="drag-handle" draggable="true">⋮⋮</td>' +
+      '<td><input type="checkbox" class="sel"/></td>' +
+      '<td><input type="text" class="name" value="' + escapeHtml(name) + '"/></td>' +
+      '<td><input type="text" class="x num-input" value="' + escapeHtml(x) + '"/></td>' +
+      '<td><input type="text" class="a num-input" value="' + escapeHtml(a) + '"/></td>' +
+      '<td><input type="text" class="b num-input" value="' + escapeHtml(b) + '"/></td>' +
+      '<td><input type="text" class="coeff num-input" value="' + escapeHtml(coeff) + '"/></td>';
+    tbody.appendChild(tr);
+
+    // 绑定数值预览（表格行内的输入框）
+    var inputs = tr.querySelectorAll('input.num-input');
+    inputs.forEach(function(inp) {
+      inp.addEventListener('blur', function() {
+        var v = (inp.value || '').trim();
+        if (v === '') {
+          inp.classList.remove('input-valid', 'input-invalid');
+          return;
+        }
+        var num = parseNum(v);
+        if (Number.isNaN(num)) {
+          inp.classList.add('input-invalid');
+          inp.classList.remove('input-valid');
+          inp.title = '无效数值';
+        } else {
+          inp.classList.add('input-valid');
+          inp.classList.remove('input-invalid');
+          inp.title = fmtSci12(num);
+        }
+      });
+      inp.addEventListener('input', function() {
+        if (inp.classList.contains('input-invalid')) {
+          inp.classList.remove('input-invalid');
+          inp.title = '';
+        }
+      });
+    });
+
+    return tr;
+  }
+
+  addRowBtn.addEventListener('click', function(){ newRow(); });
+  delRowBtn.addEventListener('click', function(){
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    for(let i=rows.length-1;i>=0;i--){
+      const r = rows[i];
+      if(r.querySelector('.sel').checked) tbody.removeChild(r);
+    }
+  });
+
+  fillBtn.addEventListener('click', function(){
+    tbody.innerHTML='';
+    newRow('Q','1.23e1','0.05','0.02','1');
+    newRow('L','0.50','0.001','0.0005','1');
+    newRow('A','0.10','0.0002','0.0001','1');
+  });
+  clearBtn.addEventListener('click', function(){ tbody.innerHTML=''; });
+
+  // ==================== x=0 遮罩系统 ====================
+  const zeroXOverlay = document.getElementById('zeroXOverlay');
+  const zeroXInputs = document.getElementById('zeroXInputs');
+  const zeroXConfirm = document.getElementById('zeroXConfirm');
+  const zeroXCancel = document.getElementById('zeroXCancel');
+  let pendingCalcData = null; // { names, xi, uA, uB, coeff, fVal, zeroIndices, resolve }
+
+  function showZeroXOverlay(data) {
+    return new Promise(function(resolve) {
+      pendingCalcData = data;
+      pendingCalcData.resolve = resolve;
+      zeroXInputs.innerHTML = '';
+
+      data.zeroIndices.forEach(function(i) {
+        var div = document.createElement('div');
+        div.className = 'zero-x-row';
+        div.innerHTML =
+          '<label>第' + (i+1) + '行 <b>' + escapeHtml(data.names[i]) + '</b></label>' +
+          '<input type="text" class="zero-x-rel num-input" placeholder="请输入 u_i/x_i（支持科学计数法）" value="0"/>';
+        zeroXInputs.appendChild(div);
+      });
+
+      zeroXOverlay.classList.remove('hidden');
+    });
+  }
+
+  function hideZeroXOverlay() {
+    zeroXOverlay.classList.add('hidden');
+    pendingCalcData = null;
+  }
+
+  zeroXConfirm.addEventListener('click', function() {
+    if (!pendingCalcData) return;
+    var inputs = zeroXInputs.querySelectorAll('input.zero-x-rel');
+    var values = [];
+    var allValid = true;
+    inputs.forEach(function(inp, idx) {
+      var v = parseNum(inp.value);
+      if (Number.isNaN(v)) {
+        inp.classList.add('input-invalid');
+        allValid = false;
+      } else {
+        inp.classList.remove('input-invalid');
+        values.push(v);
+      }
+    });
+    if (!allValid) {
+      showToast('❌ 有输入无效，请检查后重试', 3000);
+      return;
+    }
+    hideZeroXOverlay();
+    pendingCalcData.resolve(values);
+  });
+
+  zeroXCancel.addEventListener('click', function() {
+    hideZeroXOverlay();
+    if (pendingCalcData) pendingCalcData.resolve(null);
+  });
+
+  // ==================== 计算历史 ====================
+  const historyPanel = document.getElementById('historyPanel');
+  const historyList = document.getElementById('historyList');
+  const clearHistoryBtn = document.getElementById('clearHistory');
+  let historyEntries = [];
+
+  function addHistory(summary, htmlDetail, plainDetail) {
+    var entry = {
+      time: new Date(),
+      summary: summary,
+      htmlDetail: htmlDetail,
+      plainDetail: plainDetail || ''
+    };
+    historyEntries.unshift(entry);
+    if (historyEntries.length > 50) historyEntries.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    if (historyEntries.length === 0) {
+      historyPanel.style.display = 'none';
+      return;
+    }
+    historyPanel.style.display = '';
+    historyList.innerHTML = '';
+    historyEntries.forEach(function(entry, idx) {
+      var div = document.createElement('div');
+      div.className = 'history-entry';
+      var timeStr = entry.time.toLocaleString('zh-CN');
+      div.innerHTML =
+        '<div class="history-summary">' +
+          '<span class="history-title">' + entry.summary + '</span>' +
+          '<span class="history-time">' + timeStr + '</span>' +
+        '</div>' +
+        '<div class="history-detail">' + entry.htmlDetail + '</div>';
+      div.querySelector('.history-summary').addEventListener('click', function() {
+        div.classList.toggle('open');
+      });
+      historyList.appendChild(div);
+    });
+  }
+
+  clearHistoryBtn.addEventListener('click', function() {
+    if (historyEntries.length > 0 && confirm('确定要清空所有计算历史吗？')) {
+      historyEntries = [];
+      renderHistory();
+    }
+  });
+
+  // ==================== 复制结果 ====================
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function() { return true; }).catch(function() { return fallbackCopy(text); });
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      return true;
+    } catch(e) {
+      return false;
+    } finally {
+      document.body.removeChild(ta);
+    }
+  }
+
+  copyResultBtn.addEventListener('click', function() {
+    var text = resultArea._plainText || resultArea.textContent || '';
+    if (!text.trim() || text.trim() === '结果将在此显示。') {
+      showToast('⚠️ 没有可复制的结果', 2000);
+      return;
+    }
+    copyText(text).then(function(ok) {
+      if (ok) {
+        copyResultBtn.textContent = '✅ 已复制!';
+        copyResultBtn.classList.add('copied');
+        setTimeout(function() {
+          copyResultBtn.textContent = '📋 复制结果';
+          copyResultBtn.classList.remove('copied');
+        }, 2000);
+      } else {
+        showToast('❌ 复制失败，请手动选择复制', 3000);
+      }
+    });
+  });
+
+  clearResultBtn.addEventListener('click', function() {
+    resultArea.innerHTML = '结果将在此显示。';
+    resultArea._plainText = '';
+    resultActions.style.display = 'none';
+  });
+
+  // ==================== 主合成计算 ====================
+  function doMainCalc(names, xi, uA, uB, coeff, fVal, manualRels) {
+    var manIdx = 0;
+    const ux = [], urel = [];
+    for(let i=0;i<xi.length;i++){
+      const uxi = Math.sqrt(uA[i]*uA[i] + uB[i]*uB[i]) * coeff[i];
+      ux.push(uxi);
+      if(Math.abs(xi[i]) > 0){
+        urel.push( uxi / Math.abs(xi[i]) );
+      } else {
+        if (manualRels && manIdx < manualRels.length) {
+          urel.push(manualRels[manIdx++]);
+        } else {
+          urel.push(0);
+        }
+      }
+    }
+
+    let rel2 = 0;
+    for(var rIdx = 0; rIdx < urel.length; rIdx++) rel2 += urel[rIdx]*urel[rIdx];
+    const rel_total = Math.sqrt(rel2);
+    const uc = Math.abs(fVal) * rel_total;
+
+    // ---- 纯文本版本（用于复制） ----
+    let plainText = '';
+    plainText += '名称\t x\t uA\t uB\t coeff\t u_x\t ui/xi\n';
+    for(let i=0;i<xi.length;i++){
+      plainText += names[i] + '\t' + fmtSci12(xi[i]) + '\t' + fmtSci12(uA[i]) + '\t' + fmtSci12(uB[i]) + '\t' + coeff[i] + '\t' + fmtSci12(ux[i]) + '\t' + fmtSci12(urel[i]) + '\n';
+    }
+    plainText += '\n主物理量 f = ' + fmtSci12(fVal) + '\n';
+    plainText += '合成标准不确定度 uc = ' + fmtSci12(uc) + '\n';
+    plainText += '相对不确定度 uc/f = ' + (Math.abs(fVal)>0 ? fmtSci12(uc/Math.abs(fVal)) : 'N/A (f=0)') + '\n';
+
+    // ---- HTML 版本（表格 + 格式化公式） ----
+    var html = '';
+    html += '<table class="result-table"><thead><tr>';
+    html += '<th>名称</th>';
+    html += '<th><i>x</i></th>';
+    html += '<th><i>u</i><sub>A</sub></th>';
+    html += '<th><i>u</i><sub>B</sub></th>';
+    html += '<th>coeff</th>';
+    html += '<th><i>u<sub>x</sub></i></th>';
+    html += '<th><i>u<sub>i</sub></i> / <i>x<sub>i</sub></i></th>';
+    html += '</tr></thead><tbody>';
+    for(var ti=0; ti<xi.length; ti++){
+      html += '<tr>';
+      html += '<td class="col-name">' + escapeHtml(names[ti]) + '</td>';
+      html += '<td class="col-val">' + fmtSci12(xi[ti]) + '</td>';
+      html += '<td class="col-val">' + fmtSci12(uA[ti]) + '</td>';
+      html += '<td class="col-val">' + fmtSci12(uB[ti]) + '</td>';
+      html += '<td class="col-val">' + coeff[ti] + '</td>';
+      html += '<td class="col-val">' + fmtSci12(ux[ti]) + '</td>';
+      html += '<td class="col-val">' + fmtSci12(urel[ti]) + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+
+    // 公式汇总区
+    var ucOverF = (Math.abs(fVal)>0) ? fmtSci12(uc/Math.abs(fVal)) : 'N/A (<i>f</i> = 0)';
+    html += '<div class="result-summary">';
+    html += '<div class="eq-row"><span class="eq-label">主物理量 <i>f</i></span><span class="eq-value">= ' + fmtSci12(fVal) + '</span></div>';
+    html += '<div class="eq-row"><span class="eq-label"><i>u<sub>c</sub></i> = <span class="sqrt">&Sigma;(<i>u<sub>i</sub></i>/<i>x<sub>i</sub></i>)<sup>2</sup></span> &middot; |<i>f</i>|</span><span class="eq-value">= ' + fmtSci12(uc) + '</span></div>';
+    html += '<div class="eq-row eq-final"><span class="eq-label">相对不确定度 <i>u<sub>c</sub></i> / <i>f</i></span><span class="eq-value">= ' + ucOverF + '</span></div>';
+    html += '</div>';
+
+    resultArea.innerHTML = html;
+    // 将纯文本挂到 DOM 上供复制按钮使用
+    resultArea._plainText = plainText;
+    resultActions.style.display = 'flex';
+
+    // 添加到历史
+    var summary = '<i>f</i> = ' + fmtSci12(fVal) + ', <i>u<sub>c</sub></i> = ' + fmtSci12(uc);
+    addHistory(summary, html, plainText);
+
+    return plainText;
+  }
+
+  computeBtn.addEventListener('click', async function(){
+    resultArea.innerHTML = '';
+    resultArea._plainText = '';
+    resultActions.style.display = 'none';
     const rows = Array.from(tbody.querySelectorAll('tr'));
     if(rows.length === 0){
-      alert('请先添加至少一行分物理量。');
+      showToast('⚠️ 请先添加至少一行分物理量', 3000);
       return;
     }
     const names=[], xi=[], uA=[], uB=[], coeff=[];
@@ -256,7 +840,7 @@
       const r = rows[i];
       const name = r.querySelector('.name').value.trim();
       if(!name){
-        alert('第'+(i+1)+'行 名称不能为空。');
+        showToast('⚠️ 第'+(i+1)+'行 名称不能为空', 3000);
         return;
       }
       names.push(name);
@@ -269,7 +853,7 @@
       const bv = parseNum(bs);
       let cv = parseNum(cs);
       if(Number.isNaN(xv) || Number.isNaN(av) || Number.isNaN(bv) || Number.isNaN(cv)){
-        alert('第'+(i+1)+'行 有数值输入无效，请检查 x/uA/uB/coeff，支持科学计数法。');
+        showToast('⚠️ 第'+(i+1)+'行 有数值输入无效，请检查 x/uA/uB/coeff', 3000);
         return;
       }
       xi.push(xv); uA.push(av); uB.push(bv); coeff.push(cv);
@@ -278,136 +862,216 @@
     const fStr = document.getElementById('fVal').value.trim();
     const fVal = parseNum(fStr);
     if(Number.isNaN(fVal)){
-      alert('主物理量 f 输入无效，请填写数值（支持科学计数法）。');
+      showToast('⚠️ 主物理量 f 输入无效，请填写数值', 3000);
       return;
     }
 
-    const ux = [], urel = [];
-    for(let i=0;i<xi.length;i++){
-      const uxi = Math.sqrt(uA[i]*uA[i] + uB[i]*uB[i]) * coeff[i];
-      ux.push(uxi);
-      if(Math.abs(xi[i]) > 0){
-        urel.push( uxi / Math.abs(xi[i]) );
-      } else {
-        const manual = prompt('第'+(i+1)+'行 x=0，无法自动计算相对不确定度，请输入该分量的相对不确定度 u_i/x_i（支持科学计数法）：','0');
-        const mv = parseNum(manual||'');
-        if(Number.isNaN(mv)){ alert('输入无效，计算取消。'); return; }
-        urel.push(mv);
+    // 检查是否有 x=0 的情况
+    var zeroIndices = [];
+    for(var zi = 0; zi < xi.length; zi++) {
+      if (Math.abs(xi[zi]) === 0) zeroIndices.push(zi);
+    }
+
+    if (zeroIndices.length > 0) {
+      // 使用遮罩层替代 prompt
+      var manualRels = await showZeroXOverlay({
+        names: names, xi: xi, uA: uA, uB: uB, coeff: coeff,
+        fVal: fVal, zeroIndices: zeroIndices
+      });
+      if (manualRels === null) {
+        resultArea.innerHTML = '计算已取消。';
+        resultArea._plainText = '';
+        return;
       }
+      doMainCalc(names, xi, uA, uB, coeff, fVal, manualRels);
+    } else {
+      doMainCalc(names, xi, uA, uB, coeff, fVal, null);
     }
-
-    let rel2 = 0;
-    for(const r of urel) rel2 += r*r;
-    const rel_total = Math.sqrt(rel2);
-    const uc = Math.abs(fVal) * rel_total;
-
-    // 输出
-    let out = '';
-    out += '名称\t x(sci12)\t uA(sci12)\t uB(sci12)\t coeff\t u_x(sci12)\t u_i/x_i(sci12)\n';
-    for(let i=0;i<xi.length;i++){
-      out += names[i] + '\t' + fmtSci12(xi[i]) + '\t' + fmtSci12(uA[i]) + '\t' + fmtSci12(uB[i]) + '\t' + coeff[i] + '\t' + fmtSci12(ux[i]) + '\t' + fmtSci12(urel[i]) + '\n';
-    }
-    out += '\n主物理量 f = ' + fmtSci12(fVal) + '\n';
-    out += '合成标准不确定度 uc = ' + fmtSci12(uc) + '\n';
-    out += '相对不确定度 uc/f = ' + (Math.abs(fVal)>0 ? fmtSci12(uc/Math.abs(fVal)) : 'N/A (f=0)') + '\n';
-
-    resultArea.textContent = out;
   });
 
-  // A类计算逻辑
-  computeA.addEventListener('click', ()=>{
-    aResult.textContent = '';
+  // ==================== A类计算逻辑 ====================
+  computeA.addEventListener('click', function(){
+    aResult.innerHTML = '';
     const name = (a_name.value || '').trim();
-    if(!name){ alert('请填写物理量名称'); return; }
+    if(!name){ showToast('⚠️ 请填写物理量名称', 3000); return; }
     const nStr = (a_n.value || '').trim();
     const nVal = parseInt(nStr, 10);
-    if(nStr !== '' && (Number.isNaN(nVal) || nVal < 2)){ alert('测量次数 n 必须是整数且 >= 2'); return; }
+    if(nStr !== '' && (Number.isNaN(nVal) || nVal < 2)){ showToast('⚠️ 测量次数 n 必须是整数且 >= 2', 3000); return; }
     const valsText = (a_values.value || '').trim();
-    if(!valsText){ alert('请填写测量值'); return; }
-    const parts = valsText.split(/[\s,;]+/).filter(s=>s.length>0);
+    if(!valsText){ showToast('⚠️ 请填写测量值', 3000); return; }
+    const parts = valsText.split(/[\s,;]+/).filter(function(s){ return s.length>0; });
     if(parts.length !== nVal && nStr !== ''){
-      if(!confirm(`检测到 ${parts.length} 个数值，但 n = ${nVal}。是否继续使用 ${parts.length} 个值进行计算？`)) return;
+      if(!confirm('检测到 ' + parts.length + ' 个数值，但 n = ' + nVal + '。是否继续使用 ' + parts.length + ' 个值进行计算？')) return;
     }
     const nums = [];
     for(let i=0;i<parts.length;i++){
       const v = parseNum(parts[i]);
-      if(Number.isNaN(v)){ alert('第'+(i+1)+' 个测量值无效：' + parts[i]); return; }
+      if(Number.isNaN(v)){ showToast('⚠️ 第'+(i+1)+' 个测量值无效：' + parts[i], 3000); return; }
       nums.push(v);
     }
     const m = nums.length;
     let sum = 0;
-    for(const v of nums) sum += v;
+    for(var si=0; si<nums.length; si++) sum += nums[si];
     const mean = sum / m;
     let s2 = 0;
-    for(const v of nums) s2 += (v - mean) * (v - mean);
+    for(var vi=0; vi<nums.length; vi++) s2 += (nums[vi] - mean) * (nums[vi] - mean);
     const s = Math.sqrt(s2 / (m - 1));
     const uA_val = s / Math.sqrt(m);
-    aResult.innerHTML = `<b>${escapeHtml(name)}</b> 均值 = ${fmtSci12(mean)} ，A类不确定度 u_A = ${fmtSci12(uA_val)} （n=${m}）`;
+
+    // 存储当前 A 类结果供填入表格使用
+    aResult._lastResult = { name: name, mean: mean, uA: uA_val, m: m };
+
+    // 构建偏差数据
+    var devs = [];
+    for (var di = 0; di < nums.length; di++) {
+      devs.push({ idx: di+1, value: nums[di], dev: nums[di] - mean });
+    }
+
+    var html = '';
+    // 测量值明细表
+    html += '<table class="result-table" style="margin-bottom:10px"><thead><tr>';
+    html += '<th>序号</th>';
+    html += '<th>测量值 <i>x<sub>i</sub></i></th>';
+    html += '<th>偏差 <i>x<sub>i</sub></i> &minus; <i>x&#772;</i></th>';
+    html += '</tr></thead><tbody>';
+    for (var di = 0; di < devs.length; di++) {
+      html += '<tr>';
+      html += '<td>' + devs[di].idx + '</td>';
+      html += '<td class="col-val">' + fmtSci12(devs[di].value) + '</td>';
+      html += '<td class="col-val">' + fmtSci12(devs[di].dev) + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+
+    // 汇总两行表格
+    html += '<table class="result-table"><thead><tr>';
+    html += '<th>统计量</th>';
+    html += '<th>公式</th>';
+    html += '<th>数值</th>';
+    html += '</tr></thead><tbody>';
+    html += '<tr>';
+    html += '<td class="col-name">均值 <i>x&#772;</i></td>';
+    html += '<td style="font-size:0.9em"><i>x&#772;</i> = &Sigma;<i>x<sub>i</sub></i> / <i>n</i></td>';
+    html += '<td class="col-val">' + fmtSci12(mean) + '</td>';
+    html += '</tr>';
+    html += '<tr>';
+    html += '<td class="col-name">A类不确定度 <i>u</i><sub>A</sub></td>';
+    html += '<td style="font-size:0.9em"><i>u</i><sub>A</sub> = <i>s</i>/<span class="sqrt"><i>n</i></span>，<i>s</i> = <span class="sqrt">&Sigma;(<i>x<sub>i</sub></i> &minus; <i>x&#772;</i>)<sup>2</sup>/(<i>n</i>&minus;1)</span></td>';
+    html += '<td class="col-val">' + fmtSci12(uA_val) + '</td>';
+    html += '</tr>';
+    html += '</tbody></table>';
+    html += '<div style="margin-top:8px;font-size:0.85em;color:#555">样本标准差 <i>s</i> = ' + fmtSci12(s) + '&emsp;|&emsp;自由度 <i>n</i> = ' + m + '</div>';
+
+    aResult.innerHTML = html;
   });
 
-  clearA.addEventListener('click', ()=>{
+  clearA.addEventListener('click', function(){
     a_name.value = '';
     a_n.value = '';
     a_values.value = '';
-    aResult.textContent = '';
+    aResult.innerHTML = '';
+    updateInputPreview(a_n, document.getElementById('a_n_hint'));
   });
 
-  // B类计算逻辑 (delta / √3)
-  computeB.addEventListener('click', ()=>{
-    bResult.textContent = '';
+  // ==================== B类计算逻辑 (delta / √3) ====================
+  computeB.addEventListener('click', function(){
+    bResult.innerHTML = '';
     const name = (b_name.value || '').trim();
-    if(!name){ alert('请填写物理量名称'); return; }
+    if(!name){ showToast('⚠️ 请填写物理量名称', 3000); return; }
     const deltaStr = (b_delta.value || '').trim();
     const delta = parseNum(deltaStr);
-    if(Number.isNaN(delta)){ alert('delta 输入无效，请使用数字或科学计数法'); return; }
+    if(Number.isNaN(delta)){ showToast('⚠️ delta 输入无效，请使用数字或科学计数法', 3000); return; }
     const uB_val = delta / Math.sqrt(3);
-    bResult.innerHTML = `<b>${escapeHtml(name)}</b> 仪器 delta = ${fmtSci12(delta)} ，B类不确定度 u_B = ${fmtSci12(uB_val)}`;
+
+    bResult._lastResult = { name: name, delta: delta, uB: uB_val };
+
+    bResult.innerHTML =
+      '<b>' + escapeHtml(name) + '</b> 仪器 <i>&#916;</i> = ' + fmtSci12(delta) +
+      ' ，B类不确定度 <i>u</i><sub>B</sub> = <i>&#916;</i>/<span class="sqrt">3</span> = ' + fmtSci12(uB_val);
   });
 
-  clearB.addEventListener('click', ()=>{
+  clearB.addEventListener('click', function(){
     b_name.value = '';
     b_delta.value = '';
-    bResult.textContent = '';
+    bResult.innerHTML = '';
+    updateInputPreview(b_delta, document.getElementById('b_delta_hint'));
   });
 
-  // 手动合成逻辑
-  computeM.addEventListener('click', ()=>{
-    mResult.textContent = '';
+  // ==================== 手动合成逻辑 ====================
+  computeM.addEventListener('click', function(){
+    mResult.innerHTML = '';
     const name = (m_name.value || '').trim();
-    if(!name){ alert('请填写物理量名称'); return; }
+    if(!name){ showToast('⚠️ 请填写物理量名称', 3000); return; }
     const xStr = (m_x.value || '').trim();
     const xVal = parseNum(xStr);
     const uAstr = (m_uA.value || '').trim();
     const uBstr = (m_uB.value || '').trim();
     const uA_val = parseNum(uAstr);
     const uB_val = parseNum(uBstr);
-    if(Number.isNaN(uA_val) || Number.isNaN(uB_val)){ alert('uA 或 uB 输入无效'); return; }
+    if(Number.isNaN(uA_val) || Number.isNaN(uB_val)){ showToast('⚠️ uA 或 uB 输入无效', 3000); return; }
 
-    // 计算 uA^2 + uB^2 与合成不确定度
     const sumsq = uA_val*uA_val + uB_val*uB_val;
     const u_comb = Math.sqrt(sumsq);
 
-    // 相对不确定度（若提供 x）
     let relStr = 'N/A（未提供 x 或 x=0）';
     if(!Number.isNaN(xVal) && Math.abs(xVal) > 0){
       relStr = fmtSci12(u_comb / Math.abs(xVal));
     }
 
-    // 显示合成结果，增加 uA^2 + uB^2 的显示（科学计数法）
-    mResult.innerHTML = `<b>${escapeHtml(name)}</b> 合成不确定度 u = ${fmtSci12(u_comb)} ，相对不确定度 u/x = ${relStr}
-<br>显示项：uA^2 + uB^2 = ${fmtSci12(sumsq)} （用于合成不确定度计算）`;
+    mResult._lastResult = { name: name, uA: uA_val, uB: uB_val, u_comb: u_comb, xVal: xVal, sumsq: sumsq };
+
+    var html = '';
+    html += '<b>' + escapeHtml(name) + '</b> 合成结果';
+    html += '<table class="result-table" style="margin-top:6px"><thead><tr>';
+    html += '<th>项目</th>';
+    html += '<th>公式</th>';
+    html += '<th>数值</th>';
+    html += '</tr></thead><tbody>';
+    // 第1行：uA² + uB²
+    html += '<tr>';
+    html += '<td class="col-name"><i>u</i><sub>A</sub><sup>2</sup> + <i>u</i><sub>B</sub><sup>2</sup></td>';
+    html += '<td style="font-size:0.9em"><i>u</i><sub>A</sub><sup>2</sup> + <i>u</i><sub>B</sub><sup>2</sup></td>';
+    html += '<td class="col-val">' + fmtSci12(sumsq) + '</td>';
+    html += '</tr>';
+    // 第2行：u = √(uA² + uB²)
+    html += '<tr>';
+    html += '<td class="col-name">合成不确定度 <i>u</i></td>';
+    html += '<td style="font-size:0.9em"><i>u</i> = <span class="sqrt"><i>u</i><sub>A</sub><sup>2</sup> + <i>u</i><sub>B</sub><sup>2</sup></span></td>';
+    html += '<td class="col-val">' + fmtSci12(u_comb) + '</td>';
+    html += '</tr>';
+    // 第3行：相对不确定度 u/x
+    html += '<tr>';
+    html += '<td class="col-name">相对不确定度 <i>u/x</i></td>';
+    html += '<td style="font-size:0.9em"><i>u</i> / <i>x</i></td>';
+    html += '<td class="col-val">' + relStr + '</td>';
+    html += '</tr>';
+    html += '</tbody></table>';
+    html += '&nbsp;<button class="fill-btn" id="fillFromM" style="font-size:0.85em;padding:2px 6px;margin-top:8px">📥 填入合成表格</button>';
+
+    mResult.innerHTML = html;
+
+    document.getElementById('fillFromM').addEventListener('click', function() {
+      var d = mResult._lastResult;
+      if (!d) return;
+      newRow(d.name, Number.isNaN(d.xVal) ? '' : fmtSci12(d.xVal), fmtSci12(d.uA), fmtSci12(d.uB), '1');
+      showToast('✅ 已将 <b>' + escapeHtml(d.name) + '</b> 填入合成表格', 3000);
+    });
   });
 
-  clearM.addEventListener('click', ()=>{
+  clearM.addEventListener('click', function(){
     m_name.value = '';
     m_x.value = '';
     m_uA.value = '';
     m_uB.value = '';
-    mResult.textContent = '';
+    mResult.innerHTML = '';
+    ['m_x', 'm_uA', 'm_uB'].forEach(function(id) {
+      updateInputPreview(document.getElementById(id), document.getElementById(id + '_hint'));
+    });
   });
 
-  // init
+  // ==================== 初始化 ====================
   newRow();
+
 })();
 </script>
 </body>
